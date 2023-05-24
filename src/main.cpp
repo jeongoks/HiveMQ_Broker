@@ -1,20 +1,3 @@
-/*
-  ArduinoMqttClient - WiFi Advanced Callback
-
-  This example connects to a MQTT broker and subscribes to a single topic,
-  it also publishes a message to another topic every 10 seconds.
-  When a message is received it prints the message to the Serial Monitor,
-  it uses the callback functionality of the library.
-
-  It also demonstrates how to set the will message, get/set QoS, 
-  duplicate and retain values of messages.
-
-  The circuit:
-  - Arduino MKR 1000, MKR 1010 or Uno WiFi Rev2 board
-
-  This example code is in the public domain.
-*/
-
 #include <ArduinoMqttClient.h>
 #if defined(ARDUINO_SAMD_MKRWIFI1010) || defined(ARDUINO_SAMD_NANO_33_IOT) || defined(ARDUINO_AVR_UNO_WIFI_REV2)
   #include <WiFiNINA.h>
@@ -28,8 +11,8 @@
 
 #include "arduino_secrets.h"
 #include <Adafruit_Sensor.h>
+#include <utility/wifi_drv.h>
 #include "DHT.h"
-#include <Servo.h>
 ///////please enter your sensitive data in the Secret tab/arduino_secrets.h
 char ssid[] = SECRET_SSID;    // your network SSID (name)
 char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as key for WEP)
@@ -38,16 +21,15 @@ char password[] = HIVEMQ_PASSWORD;
 
 WiFiSSLClient wifiClient;
 MqttClient mqttClient(wifiClient);
-Servo myServo;
 DHT dht(1, DHT11);
 
 void onMqttMessage(int messageSize);
 
-const char broker[]    = "7e4b48c3e103405ea875e85951a775c3.s2.eu.hivemq.cloud";
+const char broker[]    = BROKER;
 int        port        = 8883;
 const char willTopic[] = "home/will";
-const char inTopic[]   = "home/input";
-const char outTopic[]  = "home/temp";
+const char outTopic[]   = "telemetry/home/led";
+const char inTopic[]  = "telemetry/home/living-room";
 
 const long interval = 10000;
 unsigned long previousMillis = 0;
@@ -60,13 +42,24 @@ void setup() {
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-  myServo.attach(9);  
+  
+  pinMode(LED_BUILTIN, OUTPUT);
   dht.begin();
+  WiFiDrv::pinMode(25, OUTPUT);
+  WiFiDrv::pinMode(26, OUTPUT);
+  WiFiDrv::pinMode(27, OUTPUT);
+
+  WiFiDrv::analogWrite(25, 0);
+  WiFiDrv::analogWrite(26, 255);
+  WiFiDrv::analogWrite(27, 0);
 
   // attempt to connect to WiFi network:
   Serial.print("Attempting to connect to WPA SSID: ");
   Serial.println(ssid);
   while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
+    WiFiDrv::analogWrite(25, 255);
+    WiFiDrv::analogWrite(26, 255);
+    WiFiDrv::analogWrite(27, 0);
     // failed, retry
     Serial.print(".");
     delay(5000);
@@ -75,21 +68,10 @@ void setup() {
   Serial.println("You're connected to the network");
   Serial.println();
 
-  // You can provide a unique client ID, if not set the library uses Arduino-millis()
-  // Each client must have a unique client ID
-  // mqttClient.setId("clientId");
   mqttClient.setId("MKRWiFi1010Client");
-
-  // You can provide a username and password for authentication
-  // mqttClient.setUsernamePassword("username", "password");
   mqttClient.setUsernamePassword(username, password);
+  mqttClient.setCleanSession(false);
 
-  // By default the library connects with the "clean session" flag set,
-  // you can disable this behaviour by using
-  // mqttClient.setCleanSession(false);
-
-  // set a will message, used by the broker when the connection dies unexpectedly
-  // you must know the size of the message beforehand, and it must be set before connecting
   String willPayload = "oh no!";
   bool willRetain = true;
   int willQos = 1;
@@ -104,33 +86,43 @@ void setup() {
   if (!mqttClient.connect(broker, port)) {
     Serial.print("MQTT connection failed! Error code = ");
     Serial.println(mqttClient.connectError());
-
+    WiFiDrv::analogWrite(25, 255);
+    WiFiDrv::analogWrite(26, 255);
+    WiFiDrv::analogWrite(27, 0);
     while (1);
+  } else {
+    WiFiDrv::analogWrite(25, 255);
+    WiFiDrv::analogWrite(26, 0);
+    WiFiDrv::analogWrite(27, 0);
   }
 
   Serial.println("You're connected to the MQTT broker!");
   Serial.println();
-
+  
   // set the message receive callback
   mqttClient.onMessage(onMqttMessage);
 
   Serial.print("Subscribing to topic: ");
-  Serial.println(inTopic);
+  Serial.println(outTopic);
   Serial.println();
 
   // subscribe to a topic
   // the second parameter sets the QoS of the subscription,
   // the the library supports subscribing at QoS 0, 1, or 2
-  int subscribeQos = 0;
+  int subscribeQos = 1;
 
-  mqttClient.subscribe(inTopic, subscribeQos);
+  mqttClient.subscribe(outTopic, subscribeQos);
 
   // topics can be unsubscribed using:
   // mqttClient.unsubscribe(inTopic);
 
   Serial.print("Waiting for messages on topic: ");
-  Serial.println(inTopic);
+  Serial.println(outTopic);
   Serial.println();
+  delay(2000);
+  WiFiDrv::analogWrite(25, 255);
+  WiFiDrv::analogWrite(26, 0);
+  WiFiDrv::analogWrite(27, 0);
 }
 
 void loop() {
@@ -148,17 +140,19 @@ void loop() {
 
     String payload;
 
-    payload += "Temperature: ";
+    payload += "{\n";
+    payload += "  \"Temperature\": ";
     payload += temp;
-    payload += " ";
-    payload += "Humidity: ";
+    payload += ",\n";
+    payload += "  \"Humidity\": ";
     payload += humidity;
-    payload += " ";
-    payload += count;
+    payload += "\n";
+    payload += "}";
 
     Serial.print("Sending message to topic: ");
-    Serial.println(outTopic);
-    Serial.println(payload);
+    Serial.println(inTopic);
+    Serial.print(payload);
+    Serial.println(count);
 
     // send message, the Print interface can be used to set the message contents
     // in this case we know the size ahead of time, so the message payload can be streamed
@@ -167,7 +161,7 @@ void loop() {
     int qos = 1;
     bool dup = false;
 
-    mqttClient.beginMessage(outTopic, payload.length(), retained, qos, dup);
+    mqttClient.beginMessage(inTopic, payload.length(), retained, qos, dup);
     mqttClient.print(payload);
     mqttClient.endMessage();
 
@@ -196,11 +190,11 @@ void onMqttMessage(int messageSize) {
   // use the Stream interface to print the contents
   while (mqttClient.available()) {
     incPayload = mqttClient.readString();
-    if (incPayload == "1") {
-      myServo.write(180);
+    if (incPayload == "HIGH") {
+      digitalWrite(LED_BUILTIN, HIGH);
     } 
-    else if (incPayload == "0") {
-      myServo.write(0);
+    else if (incPayload == "LOW") {
+      digitalWrite(LED_BUILTIN, LOW);
     }
   }
   Serial.println();
