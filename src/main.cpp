@@ -31,7 +31,7 @@ const char willTopic[] = "home/will";
 const char outTopic[]   = "telemetry/home/led";
 const char inTopic[]  = "telemetry/home/living-room";
 
-const long interval = 10000;
+const long interval = 60000;
 unsigned long previousMillis = 0;
 
 int count = 0;
@@ -39,9 +39,6 @@ int count = 0;
 void setup() {
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
   
   pinMode(LED_BUILTIN, OUTPUT);
   dht.begin();
@@ -106,15 +103,9 @@ void setup() {
   Serial.println(outTopic);
   Serial.println();
 
-  // subscribe to a topic
-  // the second parameter sets the QoS of the subscription,
-  // the the library supports subscribing at QoS 0, 1, or 2
   int subscribeQos = 1;
 
   mqttClient.subscribe(outTopic, subscribeQos);
-
-  // topics can be unsubscribed using:
-  // mqttClient.unsubscribe(inTopic);
 
   Serial.print("Waiting for messages on topic: ");
   Serial.println(outTopic);
