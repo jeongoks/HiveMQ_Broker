@@ -31,7 +31,7 @@ const char willTopic[] = "home/will";
 const char outTopic[]   = "telemetry/home/led";
 const char inTopic[]  = "telemetry/home/living-room";
 
-const long interval = 60000;
+const long interval = 120000;
 unsigned long previousMillis = 0;
 
 int count = 0;
